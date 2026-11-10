@@ -1,19 +1,65 @@
 # tgbrowser
 
-Self-hosted browser service intended to run in an isolated environment (Docker), built on the Chrome ecosystem.
+Self-hosted Chromium browser infrastructure: Docker browsers, Patchright CDP, noVNC HITL, Browser Use–shaped HTTP API with progressive self-docs.
 
-## Status
+## Quick start
 
-Early / pre-implementation. Goals and constraints are documented in [docs/thoughts-before-starting.md](docs/thoughts-before-starting.md). Technology selection has not started yet.
+```bash
+# 1) Build browser image
+docker compose build
 
-## Planned capabilities
+# 2) Start API (spawns browsers via Docker on demand)
+npm install
+npm run api
+```
 
-- Docker-hosted browser runtime
-- Chrome / Chromium ecosystem
-- Human-in-the-loop (HITL) when automation needs a person
-- Stealth-oriented browsing
-- Saved / persistent browser profiles
+API listens on `http://127.0.0.1:7800`.
+
+```bash
+# Discover APIs (progressive disclosure)
+curl -s http://127.0.0.1:7800/api/v1/help | jq .
+curl -s http://127.0.0.1:7800/api/v1/help/create_browser_session | jq .
+
+# Create profile + browser, connect with Patchright
+npm run api-session
+```
+
+| Endpoint | URL |
+| --- | --- |
+| Service | http://127.0.0.1:7800/api/v1 |
+| Help catalog | http://127.0.0.1:7800/api/v1/help |
+| OpenAPI | http://127.0.0.1:7800/api/v1/openapi.json |
+
+Optional auth: set `TGBROWSER_API_KEY` and send header `X-Browser-Use-API-Key`.
+
+## Layout
+
+```
+src/server.ts            HTTP API
+src/api/                 help registry, proxy
+src/services/            browser lifecycle
+src/runtime/docker.ts    docker run/stop
+src/store/               profiles + session state
+docker/browser/          Chromium + Xvfb + noVNC image
+examples/api-session.ts
+src/**/*.test.ts         colocated unit tests (node:test + tsx)
+docs/api-design-browser-use-style.md
+docs/thoughts-before-starting.md
+```
+
+## Scripts
+
+```bash
+npm run api         # start HTTP API
+npm run typecheck   # tsc --noEmit
+npm test            # unit tests
+```
+
+## Stealth
+
+Client uses Patchright. Browser image runs headed Chromium on Xvfb. See README history / `examples/stealth-check.ts` for signal checks.
 
 ## Docs
 
+- [API design (Browser Use–shaped)](docs/api-design-browser-use-style.md)
 - [Thoughts before starting](docs/thoughts-before-starting.md)

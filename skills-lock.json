@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "skills": {
+    "cursor-local-best-practices": {
+      "source": "../agent-kit",
+      "sourceType": "local",
+      "computedHash": "f6b92c1abafb62cb842decfd0c143b47149d07fa1929dd5d4477ef7c9f3d85b5"
+    },
+    "javascript-typescript-best-practices": {
+      "source": "../agent-kit",
+      "sourceType": "local",
+      "computedHash": "a5657d4d0469016ac4c9a36e62e97261c3186cea33110eee7fca5b2cd8c2232f"
+    },
+    "save-web-page": {
+      "source": "../agent-kit",
+      "sourceType": "local",
+      "computedHash": "4c0e4dc7fce8e6a48291dfd9fd53e6a2612283e13a6a9c1e22132c114e40f96f"
+    },
+    "task-divide-and-conquer": {
+      "source": "../agent-kit",
+      "sourceType": "local",
+      "computedHash": "1867f42a162c0b5d42246c53bf8c3e33fafb61326abd1e4fa2db437a2d1b9bc9"
+    },
+    "test-driven-development": {
+      "source": "../agent-kit",
+      "sourceType": "local",
+      "computedHash": "b42ed252ad38a24f22da35893298adafd255191b653c42f7503c19eb5b031105"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "tgbrowser",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "api": "tsx src/server.ts",
+    "connect": "tsx examples/connect.ts",
+    "stealth-check": "tsx examples/stealth-check.ts",
+    "api-session": "tsx examples/api-session.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test 'src/**/*.test.ts'"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "patchright": "^1.56.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.3"
+  }
+}
