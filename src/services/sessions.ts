@@ -4,9 +4,9 @@ import { config, publicBaseUrl } from "../config.ts";
 import { appError } from "../errors.ts";
 import type {
   BrowserEngine,
-  BrowserFilter,
-  CreateBrowserBody,
-  PublicBrowser,
+  CreateSessionBody,
+  PublicSession,
+  SessionFilter,
   UpstreamBases,
 } from "../types.ts";
 import {
@@ -16,52 +16,55 @@ import {
   waitForCdp,
 } from "../runtime/docker.ts";
 import {
-  createBrowserRecord,
+  createSessionRecord,
   findActiveByProfile,
-  getBrowser,
-  listBrowsers,
-  toPublicBrowser,
-  updateBrowser,
-} from "../store/browsers.ts";
+  getSession,
+  listSessions,
+  toPublicSession,
+  updateSession,
+} from "../store/sessions.ts";
 import { ensureDir } from "../store/fs.ts";
 import { getProfile, profileDir, touchProfile } from "../store/profiles.ts";
 
 const timeouts = new Map<string, NodeJS.Timeout>();
 
-function clearBrowserTimeout(id: string): void {
+const MAX_TTL_MS = config.maxTimeoutMinutes * 60_000;
+const MIN_TTL_MS = 1_000;
+
+function publicOf(session: Parameters<typeof toPublicSession>[0]): PublicSession {
+  return toPublicSession(session, publicBaseUrl(), config.apiKey);
+}
+
+function clearSessionTimeout(id: string): void {
   const t = timeouts.get(id);
   if (t) clearTimeout(t);
   timeouts.delete(id);
 }
 
 function scheduleStop(id: string, timeoutAt: string | null): void {
-  clearBrowserTimeout(id);
+  clearSessionTimeout(id);
   if (!timeoutAt) return;
   const ms = new Date(timeoutAt).getTime() - Date.now();
   if (ms <= 0) {
-    void stopBrowser(id).catch(() => {});
+    void stopSession(id).catch(() => {});
     return;
   }
   const handle = setTimeout(() => {
-    void stopBrowser(id).catch(() => {});
+    void stopSession(id).catch(() => {});
   }, ms);
   timeouts.set(id, handle);
 }
 
-export async function createBrowser(body: CreateBrowserBody = {}): Promise<PublicBrowser> {
+export async function createSession(body: CreateSessionBody): Promise<PublicSession> {
   const profileId = body.profileId ?? null;
   const engine: BrowserEngine = body.engine ?? "stock";
-  const timeoutMinutes = Number(body.timeout ?? config.defaultTimeoutMinutes);
+  const ttlMs = Number(body.ttl);
 
   if (!config.engines.includes(engine)) {
     throw appError(`Unsupported engine: ${engine}`, 422, "invalid_engine");
   }
-  if (
-    !Number.isFinite(timeoutMinutes) ||
-    timeoutMinutes < 1 ||
-    timeoutMinutes > config.maxTimeoutMinutes
-  ) {
-    throw appError(`timeout must be 1..${config.maxTimeoutMinutes}`, 422, "invalid_timeout");
+  if (!Number.isFinite(ttlMs) || ttlMs < MIN_TTL_MS || ttlMs > MAX_TTL_MS) {
+    throw appError(`ttl must be ${MIN_TTL_MS}..${MAX_TTL_MS} ms`, 422, "invalid_ttl");
   }
   if ((body.browserScreenWidth == null) !== (body.browserScreenHeight == null)) {
     throw appError(
@@ -79,7 +82,7 @@ export async function createBrowser(body: CreateBrowserBody = {}): Promise<Publi
     }
     const existing = await findActiveByProfile(profileId);
     if (existing) {
-      throw appError("Profile already has an active browser", 409, "profile_in_use");
+      throw appError("Profile already has an active session", 409, "profile_in_use");
     }
     profilePath = profileDir(profileId);
     await touchProfile(profileId);
@@ -106,10 +109,11 @@ export async function createBrowser(body: CreateBrowserBody = {}): Promise<Publi
     throw err;
   }
 
-  const timeoutAt = new Date(Date.now() + timeoutMinutes * 60_000).toISOString();
-  const browser = await createBrowserRecord({
+  const timeoutAt = new Date(Date.now() + ttlMs).toISOString();
+  const session = await createSessionRecord({
     profileId,
     engine,
+    ttlMs,
     timeoutAt,
     containerId,
     containerName,
@@ -118,43 +122,43 @@ export async function createBrowser(body: CreateBrowserBody = {}): Promise<Publi
     profilePath,
   });
 
-  scheduleStop(browser.id, timeoutAt);
-  return toPublicBrowser(browser, publicBaseUrl());
+  scheduleStop(session.id, timeoutAt);
+  return publicOf(session);
 }
 
-export async function stopBrowser(id: string): Promise<PublicBrowser> {
-  clearBrowserTimeout(id);
-  const browser = await getBrowser(id);
-  if (!browser) {
-    throw appError("Browser not found", 404, "browser_not_found");
+export async function stopSession(id: string): Promise<PublicSession> {
+  clearSessionTimeout(id);
+  const session = await getSession(id);
+  if (!session) {
+    throw appError("Session not found", 404, "session_not_found");
   }
-  if (browser.status === "stopped") {
-    return toPublicBrowser(browser, publicBaseUrl());
+  if (session.status === "stopped") {
+    return publicOf(session);
   }
-  if (browser.containerName) {
-    await stopBrowserContainer(browser.containerName);
+  if (session.containerName) {
+    await stopBrowserContainer(session.containerName);
   }
-  const updated = await updateBrowser(id, {
+  const updated = await updateSession(id, {
     status: "stopped",
     cdpPort: null,
     livePort: null,
     containerId: null,
   });
   if (!updated) {
-    throw appError("Browser not found", 404, "browser_not_found");
+    throw appError("Session not found", 404, "session_not_found");
   }
-  return toPublicBrowser(updated, publicBaseUrl());
+  return publicOf(updated);
 }
 
-export async function getPublicBrowser(id: string): Promise<PublicBrowser> {
-  const browser = await getBrowser(id);
-  if (!browser) {
-    throw appError("Browser not found", 404, "browser_not_found");
+export async function getPublicSession(id: string): Promise<PublicSession> {
+  const session = await getSession(id);
+  if (!session) {
+    throw appError("Session not found", 404, "session_not_found");
   }
-  return toPublicBrowser(browser, publicBaseUrl());
+  return publicOf(session);
 }
 
-export async function listPublicBrowsers({
+export async function listPublicSessions({
   filterBy,
   pageNumber = 1,
   pageSize = 10,
@@ -163,21 +167,19 @@ export async function listPublicBrowsers({
   pageNumber?: number;
   pageSize?: number;
 } = {}): Promise<{
-  items: PublicBrowser[];
+  items: PublicSession[];
   totalItems: number;
   pageNumber: number;
   pageSize: number;
 }> {
-  let items = await listBrowsers();
+  let items = await listSessions();
   if (filterBy === "active" || filterBy === "stopped") {
-    const status = filterBy as BrowserFilter;
-    items = items.filter((b) => b.status === status);
+    const status = filterBy as SessionFilter;
+    items = items.filter((s) => s.status === status);
   }
   const totalItems = items.length;
   const start = (pageNumber - 1) * pageSize;
-  const page = items
-    .slice(start, start + pageSize)
-    .map((b) => toPublicBrowser(b, publicBaseUrl()));
+  const page = items.slice(start, start + pageSize).map((s) => publicOf(s));
   return {
     items: page,
     totalItems,
@@ -187,12 +189,12 @@ export async function listPublicBrowsers({
 }
 
 export async function getActiveUpstream(id: string): Promise<UpstreamBases | null> {
-  const browser = await getBrowser(id);
-  if (!browser || browser.status !== "active" || !browser.cdpPort || !browser.livePort) {
+  const session = await getSession(id);
+  if (!session || session.status !== "active" || !session.cdpPort || !session.livePort) {
     return null;
   }
   return {
-    cdpBase: `http://127.0.0.1:${browser.cdpPort}`,
-    liveBase: `http://127.0.0.1:${browser.livePort}`,
+    cdpBase: `http://127.0.0.1:${session.cdpPort}`,
+    liveBase: `http://127.0.0.1:${session.livePort}`,
   };
 }

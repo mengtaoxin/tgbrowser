@@ -4,23 +4,22 @@ import { matchPath } from "./http.ts";
 
 describe("matchPath", () => {
   it("extracts path params", () => {
-    assert.deepEqual(matchPath("/api/v1/browsers/{id}", "/api/v1/browsers/abc-123"), {
+    assert.deepEqual(matchPath("/session/{id}", "/session/abc-123"), {
       id: "abc-123",
     });
   });
 
   it("decodes URI components", () => {
-    assert.deepEqual(
-      matchPath("/api/v1/help/{operationId}", "/api/v1/help/create%5Fbrowser"),
-      { operationId: "create_browser" },
-    );
+    assert.deepEqual(matchPath("/help/{operationId}", "/help/create%5Fsession"), {
+      operationId: "create_session",
+    });
   });
 
   it("returns null on segment mismatch", () => {
-    assert.equal(matchPath("/api/v1/profiles/{id}", "/api/v1/browsers/x"), null);
+    assert.equal(matchPath("/profiles/{id}", "/session/x"), null);
   });
 
   it("returns null on length mismatch", () => {
-    assert.equal(matchPath("/api/v1/browsers/{id}", "/api/v1/browsers/a/extra"), null);
+    assert.equal(matchPath("/session/{id}", "/session/a/extra"), null);
   });
 });

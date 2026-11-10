@@ -32,7 +32,7 @@ export interface LifecycleOptions {
   runs?: number;
   warmup?: number;
   url?: string;
-  timeoutMinutes?: number;
+  ttlMs?: number;
 }
 
 function now(): number {
@@ -42,7 +42,7 @@ function now(): number {
 async function oneCycle(
   client: ApiClient,
   url: string,
-  timeoutMinutes: number,
+  ttlMs: number,
 ): Promise<LifecycleSample> {
   let stage = "create";
   const t0 = now();
@@ -50,19 +50,19 @@ async function oneCycle(
   let connectMs = 0;
   let gotoMs = 0;
   let stopMs = 0;
-  let browserId: string | null = null;
+  let sessionId: string | null = null;
   let pw: Awaited<ReturnType<typeof chromium.connectOverCDP>> | null = null;
 
   try {
-    const browser = (await client.request("POST", "/api/v1/browsers", {
-      timeout: timeoutMinutes,
-    })) as { id: string; cdpUrl: string };
+    const session = (await client.request("POST", "/session", {
+      ttl: ttlMs,
+    })) as { id: string; connect: string };
     createMs = now() - t0;
-    browserId = browser.id;
+    sessionId = session.id;
 
     stage = "connect";
     const tConnect = now();
-    pw = await chromium.connectOverCDP(browser.cdpUrl);
+    pw = await chromium.connectOverCDP(session.connect);
     connectMs = now() - tConnect;
     const context = pw.contexts()[0] ?? (await pw.newContext());
     const page = context.pages()[0] ?? (await context.newPage());
@@ -77,9 +77,9 @@ async function oneCycle(
 
     stage = "stop";
     const tStop = now();
-    await client.request("PATCH", `/api/v1/browsers/${browser.id}`, { action: "stop" });
+    await client.request("DELETE", `/session/${session.id}`);
     stopMs = now() - tStop;
-    browserId = null;
+    sessionId = null;
 
     return {
       createMs,
@@ -99,9 +99,9 @@ async function oneCycle(
         // ignore
       }
     }
-    if (browserId) {
+    if (sessionId) {
       try {
-        await client.request("PATCH", `/api/v1/browsers/${browserId}`, { action: "stop" });
+        await client.request("DELETE", `/session/${sessionId}`);
       } catch {
         // ignore
       }
@@ -130,15 +130,15 @@ export async function runLifecycle(
   const runs = opts.runs ?? Number(process.env.BENCH_RUNS ?? 3);
   const warmup = opts.warmup ?? Number(process.env.BENCH_WARMUP ?? 1);
   const url = opts.url ?? process.env.BENCH_URL ?? "https://example.com/";
-  const timeoutMinutes = opts.timeoutMinutes ?? 5;
+  const ttlMs = opts.ttlMs ?? 5 * 60_000;
 
   for (let i = 0; i < warmup; i++) {
-    await oneCycle(client, url, timeoutMinutes);
+    await oneCycle(client, url, ttlMs);
   }
 
   const samples: LifecycleSample[] = [];
   for (let i = 0; i < runs; i++) {
-    samples.push(await oneCycle(client, url, timeoutMinutes));
+    samples.push(await oneCycle(client, url, ttlMs));
   }
 
   const ok = successful(samples);

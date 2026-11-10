@@ -13,24 +13,25 @@ describe("registry", () => {
     assert.ok(catalog.operations.length >= 10);
     assert.ok(
       catalog.operations.every(
-        (op) => op.operationId && op.method && op.path && op.detail.startsWith("/api/v1/help/"),
+        (op) => op.operationId && op.method && op.path && op.detail.startsWith("/help/"),
       ),
     );
   });
 
   it("returns detail for known operationIds and null for unknown", () => {
-    const detail = detailPayload("create_browser_session");
+    const detail = detailPayload("create_session");
     assert.ok(detail);
-    assert.equal(detail?.operationId, "create_browser_session");
+    assert.equal(detail?.operationId, "create_session");
     assert.equal(detail?.method, "POST");
+    assert.equal(detail?.path, "/session");
     assert.equal(detailPayload("does_not_exist"), null);
   });
 
   it("builds an OpenAPI document with paths", () => {
     const doc = openApiDocument();
     assert.equal(doc.openapi, "3.0.3");
-    assert.ok(doc.paths["/api/v1/browsers"]);
-    assert.ok(doc.paths["/api/v1/help/{operationId}"]);
-    assert.equal(getOperation("list_help")?.path, "/api/v1/help");
+    assert.ok(doc.paths["/session"]);
+    assert.ok(doc.paths["/help/{operationId}"]);
+    assert.equal(getOperation("list_help")?.path, "/help");
   });
 });

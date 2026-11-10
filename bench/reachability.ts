@@ -109,13 +109,13 @@ export async function runReachability(
   client: ApiClient,
   sites: readonly BenchSite[] = CORE_SITES,
 ): Promise<ReachabilityResult> {
-  const browser = (await client.request("POST", "/api/v1/browsers", {
-    timeout: 10,
-  })) as { id: string; cdpUrl: string };
+  const session = (await client.request("POST", "/session", {
+    ttl: 10 * 60_000,
+  })) as { id: string; connect: string };
 
   let pw: Awaited<ReturnType<typeof chromium.connectOverCDP>> | null = null;
   try {
-    pw = await chromium.connectOverCDP(browser.cdpUrl);
+    pw = await chromium.connectOverCDP(session.connect);
     const context = pw.contexts()[0] ?? (await pw.newContext());
     const page = context.pages()[0] ?? (await context.newPage());
 
@@ -125,7 +125,7 @@ export async function runReachability(
     }
 
     return {
-      browserId: browser.id,
+      browserId: session.id,
       sites: results,
       passed: results.filter((r) => r.ok).length,
       failed: results.filter((r) => !r.ok).length,
@@ -138,6 +138,6 @@ export async function runReachability(
         // ignore
       }
     }
-    await client.request("PATCH", `/api/v1/browsers/${browser.id}`, { action: "stop" }).catch(() => {});
+    await client.request("DELETE", `/session/${session.id}`).catch(() => {});
   }
 }

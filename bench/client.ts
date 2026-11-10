@@ -4,17 +4,20 @@ export interface ApiClient {
 }
 
 export function createApiClient(baseUrl = process.env.TGBROWSER_API ?? "http://127.0.0.1:7800"): ApiClient {
-  const headers: Record<string, string> = { "content-type": "application/json" };
-  if (process.env.TGBROWSER_API_KEY) {
-    headers["X-Browser-Use-API-Key"] = process.env.TGBROWSER_API_KEY;
+  const token = process.env.TGBROWSER_API_KEY ?? "";
+
+  function withToken(path: string): string {
+    if (!token) return path;
+    const join = path.includes("?") ? "&" : "?";
+    return `${path}${join}token=${encodeURIComponent(token)}`;
   }
 
   return {
     baseUrl,
     async request(method, path, body) {
-      const res = await fetch(`${baseUrl}${path}`, {
+      const res = await fetch(`${baseUrl}${withToken(path)}`, {
         method,
-        headers,
+        headers: { "content-type": "application/json" },
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
       });
       const text = await res.text();
@@ -32,7 +35,7 @@ export async function waitForApi(client: ApiClient, { timeoutMs = 15_000 } = {})
   let lastErr: unknown;
   while (Date.now() - started < timeoutMs) {
     try {
-      await client.request("GET", "/api/v1/help");
+      await client.request("GET", "/help");
       return;
     } catch (err) {
       lastErr = err;

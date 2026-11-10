@@ -1,6 +1,6 @@
-export type BrowserStatus = "active" | "stopped";
+export type SessionStatus = "active" | "stopped";
 export type BrowserEngine = "stock";
-export type BrowserFilter = "active" | "stopped";
+export type SessionFilter = "active" | "stopped";
 
 export interface Profile {
   id: string;
@@ -9,13 +9,14 @@ export interface Profile {
   lastUsedAt: string | null;
 }
 
-export interface BrowserRecord {
+export interface SessionRecord {
   id: string;
-  status: BrowserStatus;
+  status: SessionStatus;
   profileId: string | null;
   engine: BrowserEngine;
   startedAt: string;
   timeoutAt: string | null;
+  ttlMs: number;
   containerId: string | null;
   containerName: string | null;
   cdpPort: number | null;
@@ -23,20 +24,22 @@ export interface BrowserRecord {
   profilePath: string | null;
 }
 
-export interface PublicBrowser {
+export interface PublicSession {
   id: string;
-  status: BrowserStatus;
+  status: SessionStatus;
   profileId: string | null;
-  cdpUrl: string | null;
-  liveUrl: string | null;
+  connect: string | null;
+  stop: string | null;
+  live: string | null;
+  ttl: number;
   timeoutAt: string | null;
   startedAt: string;
   engine: BrowserEngine;
 }
 
-export interface CreateBrowserBody {
+export interface CreateSessionBody {
+  ttl: number;
   profileId?: string | null;
-  timeout?: number;
   browserScreenWidth?: number | null;
   browserScreenHeight?: number | null;
   engine?: BrowserEngine;
@@ -47,8 +50,8 @@ export interface CreateProfileBody {
   name?: string | null;
 }
 
-export interface BrowserState {
-  browsers: BrowserRecord[];
+export interface SessionState {
+  sessions: SessionRecord[];
 }
 
 export interface UpstreamBases {

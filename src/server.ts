@@ -2,7 +2,7 @@ import http from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Duplex } from "node:stream";
 import { config, publicBaseUrl } from "./config.ts";
-import { isAppError } from "./errors.ts";
+import { appError, isAppError } from "./errors.ts";
 import { matchPath, readJsonBody, sendEmpty, sendJson } from "./api/http.ts";
 import { proxyHttp, proxyUpgrade } from "./api/proxy.ts";
 import {
@@ -12,12 +12,12 @@ import {
   openApiDocument,
 } from "./api/registry.ts";
 import {
-  createBrowser,
+  createSession,
   getActiveUpstream,
-  getPublicBrowser,
-  listPublicBrowsers,
-  stopBrowser,
-} from "./services/browsers.ts";
+  getPublicSession,
+  listPublicSessions,
+  stopSession,
+} from "./services/sessions.ts";
 import {
   createProfile,
   deleteProfile,
@@ -25,19 +25,37 @@ import {
   initProfiles,
   listProfiles,
 } from "./store/profiles.ts";
-import { findActiveByProfile } from "./store/browsers.ts";
-import type { BrowserEngine, CreateBrowserBody } from "./types.ts";
+import { findActiveByProfile, sessionConnectHttpBase } from "./store/sessions.ts";
+import type { BrowserEngine, CreateSessionBody } from "./types.ts";
 
 function unauthorized(res: ServerResponse): void {
-  sendJson(res, 401, { error: "unauthorized", message: "Missing or invalid API key" });
+  sendJson(res, 401, { error: "unauthorized", message: "Missing or invalid API token" });
 }
 
-function checkAuth(req: IncomingMessage, res: ServerResponse): boolean {
+function requestToken(req: IncomingMessage, searchParams: URLSearchParams): string | null {
+  const fromQuery = searchParams.get("token");
+  if (fromQuery) return fromQuery;
+  const header = req.headers["x-api-key"];
+  if (typeof header === "string" && header) return header;
+  return null;
+}
+
+function checkAuth(
+  req: IncomingMessage,
+  res: ServerResponse,
+  searchParams: URLSearchParams,
+): boolean {
   if (!config.apiKey) return true;
-  const key = req.headers["x-browser-use-api-key"];
-  if (key && key === config.apiKey) return true;
+  const token = requestToken(req, searchParams);
+  if (token && token === config.apiKey) return true;
   unauthorized(res);
   return false;
+}
+
+function checkUpgradeAuth(req: IncomingMessage, url: URL): boolean {
+  if (!config.apiKey) return true;
+  const token = requestToken(req, url.searchParams);
+  return Boolean(token && token === config.apiKey);
 }
 
 function errorResponse(res: ServerResponse, err: unknown): void {
@@ -48,12 +66,14 @@ function errorResponse(res: ServerResponse, err: unknown): void {
   sendJson(res, status, { error: code, message });
 }
 
-function asCreateBrowserBody(body: Record<string, unknown>): CreateBrowserBody {
-  const result: CreateBrowserBody = {};
+function asCreateSessionBody(body: Record<string, unknown>): CreateSessionBody {
+  if (typeof body.ttl !== "number") {
+    throw appError("ttl is required (milliseconds)", 422, "invalid_ttl");
+  }
+  const result: CreateSessionBody = { ttl: body.ttl };
   if (body.profileId === null || typeof body.profileId === "string") {
     result.profileId = body.profileId;
   }
-  if (typeof body.timeout === "number") result.timeout = body.timeout;
   if (body.browserScreenWidth === null || typeof body.browserScreenWidth === "number") {
     result.browserScreenWidth = body.browserScreenWidth;
   }
@@ -69,50 +89,50 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   const { pathname, searchParams } = url;
   const method = req.method ?? "GET";
 
-  const cdpSub = pathname.match(/^\/api\/v1\/browsers\/([^/]+)\/cdp(\/.*)?$/);
-  const liveSub = pathname.match(/^\/api\/v1\/browsers\/([^/]+)\/live(\/.*)?$/);
+  const connectSub = pathname.match(/^\/session\/([^/]+)\/connect(\/.*)?$/);
+  const liveSub = pathname.match(/^\/session\/([^/]+)\/live(\/.*)?$/);
 
-  if (cdpSub || liveSub) {
-    if (!checkAuth(req, res)) return;
-    const id = decodeURIComponent((cdpSub || liveSub)?.[1] ?? "");
+  if (connectSub || liveSub) {
+    if (!checkAuth(req, res, searchParams)) return;
+    const id = decodeURIComponent((connectSub || liveSub)?.[1] ?? "");
     const upstream = await getActiveUpstream(id);
     if (!upstream) {
-      sendJson(res, 404, { error: "browser_not_found", message: "Active browser not found" });
+      sendJson(res, 404, { error: "session_not_found", message: "Active session not found" });
       return;
     }
-    if (cdpSub) {
-      const strip = `/api/v1/browsers/${id}/cdp`;
-      const publicBase = `${publicBaseUrl()}${strip}`;
+    if (connectSub) {
+      const strip = `/session/${id}/connect`;
+      const publicBase = sessionConnectHttpBase(id, publicBaseUrl());
       proxyHttp(req, res, upstream.cdpBase, strip, { rewriteCdp: true, publicBase });
       return;
     }
-    const strip = `/api/v1/browsers/${id}/live`;
+    const strip = `/session/${id}/live`;
     proxyHttp(req, res, upstream.liveBase, strip);
     return;
   }
 
-  if (!checkAuth(req, res)) return;
+  if (!checkAuth(req, res, searchParams)) return;
 
   try {
-    if (method === "GET" && pathname === "/api/v1") {
+    if (method === "GET" && pathname === "/") {
       sendJson(res, 200, {
         name: SERVICE.name,
         version: SERVICE.version,
         description: SERVICE.description,
         docs: {
-          catalog: "/api/v1/help",
-          openapi: "/api/v1/openapi.json",
+          catalog: "/help",
+          openapi: "/openapi.json",
         },
       });
       return;
     }
 
-    if (method === "GET" && pathname === "/api/v1/help") {
+    if (method === "GET" && pathname === "/help") {
       sendJson(res, 200, catalogPayload());
       return;
     }
 
-    const helpDetail = matchPath("/api/v1/help/{operationId}", pathname);
+    const helpDetail = matchPath("/help/{operationId}", pathname);
     if (method === "GET" && helpDetail) {
       const detail = detailPayload(helpDetail.operationId ?? "");
       if (!detail) {
@@ -123,17 +143,17 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       return;
     }
 
-    if (method === "GET" && pathname === "/api/v1/openapi.json") {
+    if (method === "GET" && pathname === "/openapi.json") {
       sendJson(res, 200, openApiDocument());
       return;
     }
 
-    if (method === "GET" && pathname === "/api/v1/profiles") {
+    if (method === "GET" && pathname === "/profiles") {
       sendJson(res, 200, { items: await listProfiles() });
       return;
     }
 
-    if (method === "POST" && pathname === "/api/v1/profiles") {
+    if (method === "POST" && pathname === "/profiles") {
       const body = await readJsonBody(req);
       if (typeof body.id !== "string") {
         sendJson(res, 422, { error: "invalid_profile_id", message: "id is required" });
@@ -147,7 +167,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       return;
     }
 
-    const profileOne = matchPath("/api/v1/profiles/{profile_id}", pathname);
+    const profileOne = matchPath("/profiles/{profile_id}", pathname);
     if (profileOne && method === "GET") {
       const profile = await getProfile(profileOne.profile_id ?? "");
       if (!profile) {
@@ -163,7 +183,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       if (active) {
         sendJson(res, 409, {
           error: "profile_in_use",
-          message: "Profile has an active browser",
+          message: "Profile has an active session",
         });
         return;
       }
@@ -172,14 +192,14 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       return;
     }
 
-    if (method === "GET" && pathname === "/api/v1/browsers") {
+    if (method === "GET" && pathname === "/session") {
       const pageNumber = Number(searchParams.get("pageNumber") ?? 1);
       const pageSize = Math.min(100, Math.max(1, Number(searchParams.get("pageSize") ?? 10)));
       const filterBy = searchParams.get("filterBy");
       sendJson(
         res,
         200,
-        await listPublicBrowsers({
+        await listPublicSessions({
           filterBy,
           pageNumber: Number.isFinite(pageNumber) && pageNumber > 0 ? pageNumber : 1,
           pageSize,
@@ -188,28 +208,20 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       return;
     }
 
-    if (method === "POST" && pathname === "/api/v1/browsers") {
+    if (method === "POST" && pathname === "/session") {
       const body = await readJsonBody(req);
-      const browser = await createBrowser(asCreateBrowserBody(body));
-      sendJson(res, 201, browser);
+      const session = await createSession(asCreateSessionBody(body));
+      sendJson(res, 201, session);
       return;
     }
 
-    const browserOne = matchPath("/api/v1/browsers/{id}", pathname);
-    if (browserOne && method === "GET") {
-      sendJson(res, 200, await getPublicBrowser(browserOne.id ?? ""));
+    const sessionOne = matchPath("/session/{id}", pathname);
+    if (sessionOne && method === "GET") {
+      sendJson(res, 200, await getPublicSession(sessionOne.id ?? ""));
       return;
     }
-    if (browserOne && method === "PATCH") {
-      const body = await readJsonBody(req);
-      if (body.action !== "stop") {
-        sendJson(res, 422, {
-          error: "unsupported_action",
-          message: 'Only action "stop" is supported',
-        });
-        return;
-      }
-      sendJson(res, 200, await stopBrowser(browserOne.id ?? ""));
+    if (sessionOne && method === "DELETE") {
+      sendJson(res, 200, await stopSession(sessionOne.id ?? ""));
       return;
     }
 
@@ -221,34 +233,31 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
 
 function onUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void {
   const url = new URL(req.url ?? "/", `http://${config.host}:${config.port}`);
-  const cdpSub = url.pathname.match(/^\/api\/v1\/browsers\/([^/]+)\/cdp(\/.*)?$/);
-  const liveSub = url.pathname.match(/^\/api\/v1\/browsers\/([^/]+)\/live(\/.*)?$/);
-  if (!cdpSub && !liveSub) {
+  const connectSub = url.pathname.match(/^\/session\/([^/]+)\/connect(\/.*)?$/);
+  const liveSub = url.pathname.match(/^\/session\/([^/]+)\/live(\/.*)?$/);
+  if (!connectSub && !liveSub) {
     socket.destroy();
     return;
   }
-  if (config.apiKey) {
-    const key = req.headers["x-browser-use-api-key"];
-    if (!key || key !== config.apiKey) {
-      socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
-      socket.destroy();
-      return;
-    }
+  if (!checkUpgradeAuth(req, url)) {
+    socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
+    socket.destroy();
+    return;
   }
 
   void (async () => {
-    const id = decodeURIComponent((cdpSub || liveSub)?.[1] ?? "");
+    const id = decodeURIComponent((connectSub || liveSub)?.[1] ?? "");
     const upstream = await getActiveUpstream(id);
     if (!upstream) {
       socket.write("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
       socket.destroy();
       return;
     }
-    if (cdpSub) {
-      proxyUpgrade(req, socket, head, upstream.cdpBase, `/api/v1/browsers/${id}/cdp`);
+    if (connectSub) {
+      proxyUpgrade(req, socket, head, upstream.cdpBase, `/session/${id}/connect`);
       return;
     }
-    proxyUpgrade(req, socket, head, upstream.liveBase, `/api/v1/browsers/${id}/live`);
+    proxyUpgrade(req, socket, head, upstream.liveBase, `/session/${id}/live`);
   })().catch(() => socket.destroy());
 }
 
@@ -261,15 +270,15 @@ server.on("upgrade", onUpgrade);
 
 server.listen(config.port, config.host, () => {
   console.log(`tgbrowser API listening on ${publicBaseUrl()}`);
-  console.log(`help:  ${publicBaseUrl()}/api/v1/help`);
+  console.log(`help:  ${publicBaseUrl()}/help`);
 });
 
 async function shutdown(): Promise<void> {
-  const { listBrowsers } = await import("./store/browsers.ts");
-  const browsers = await listBrowsers();
-  for (const b of browsers.filter((x) => x.status === "active")) {
+  const { listSessions } = await import("./store/sessions.ts");
+  const sessions = await listSessions();
+  for (const s of sessions.filter((x) => x.status === "active")) {
     try {
-      await stopBrowser(b.id);
+      await stopSession(s.id);
     } catch {
       // ignore
     }

@@ -9,11 +9,11 @@ describe("rewriteCdpPayload", () => {
       Browser: "Chrome",
     });
     const out = JSON.parse(
-      rewriteCdpPayload(raw, "http://127.0.0.1:7800/api/v1/browsers/b1/cdp"),
+      rewriteCdpPayload(raw, "http://127.0.0.1:7800/session/b1/connect"),
     );
     assert.equal(
       out.webSocketDebuggerUrl,
-      "ws://127.0.0.1:7800/api/v1/browsers/b1/cdp/devtools/browser/abc",
+      "ws://127.0.0.1:7800/session/b1/connect/devtools/browser/abc",
     );
     assert.equal(out.Browser, "Chrome");
   });
@@ -24,16 +24,16 @@ describe("rewriteCdpPayload", () => {
       { id: "noop" },
     ]);
     const out = JSON.parse(
-      rewriteCdpPayload(raw, "http://127.0.0.1:7800/api/v1/browsers/b1/cdp"),
+      rewriteCdpPayload(raw, "http://127.0.0.1:7800/session/b1/connect"),
     ) as Array<{ webSocketDebuggerUrl?: string; id?: string }>;
     assert.equal(
       out[0]?.webSocketDebuggerUrl,
-      "ws://127.0.0.1:7800/api/v1/browsers/b1/cdp/devtools/page/1",
+      "ws://127.0.0.1:7800/session/b1/connect/devtools/page/1",
     );
     assert.equal(out[1]?.id, "noop");
   });
 
   it("returns original payload when JSON is invalid", () => {
-    assert.equal(rewriteCdpPayload("not-json", "http://127.0.0.1:7800/cdp"), "not-json");
+    assert.equal(rewriteCdpPayload("not-json", "http://127.0.0.1:7800/connect"), "not-json");
   });
 });

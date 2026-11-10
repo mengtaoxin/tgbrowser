@@ -1,6 +1,6 @@
 # tgbrowser
 
-Self-hosted Chromium browser infrastructure: Docker browsers, Patchright CDP, noVNC HITL, Browser Use–shaped HTTP API with progressive self-docs.
+Self-hosted Chromium browser infrastructure: Docker browsers, Patchright CDP, noVNC HITL, Browserless Session–shaped HTTP API with progressive self-docs.
 
 ## Quick start
 
@@ -17,27 +17,27 @@ API listens on `http://127.0.0.1:7800`.
 
 ```bash
 # Discover APIs (progressive disclosure)
-curl -s http://127.0.0.1:7800/api/v1/help | jq .
-curl -s http://127.0.0.1:7800/api/v1/help/create_browser_session | jq .
+curl -s http://127.0.0.1:7800/help | jq .
+curl -s http://127.0.0.1:7800/help/create_session | jq .
 
-# Create profile + browser, connect with Patchright
+# Create profile + session, connect with Patchright
 npm run api-session
 ```
 
 | Endpoint | URL |
 | --- | --- |
-| Service | http://127.0.0.1:7800/api/v1 |
-| Help catalog | http://127.0.0.1:7800/api/v1/help |
-| OpenAPI | http://127.0.0.1:7800/api/v1/openapi.json |
+| Service | http://127.0.0.1:7800/ |
+| Help catalog | http://127.0.0.1:7800/help |
+| OpenAPI | http://127.0.0.1:7800/openapi.json |
 
-Optional auth: set `TGBROWSER_API_KEY` and send header `X-Browser-Use-API-Key`.
+Optional auth: set `TGBROWSER_API_KEY` and send query `?token=<key>` (or header `X-API-Key`).
 
 ## Layout
 
 ```
 src/server.ts            HTTP API
 src/api/                 help registry, proxy
-src/services/            browser lifecycle
+src/services/            session lifecycle
 src/runtime/docker.ts    docker run/stop
 src/store/               profiles + session state
 src/bench/               shared bench helpers (stats)
@@ -45,7 +45,7 @@ bench/                   core lifecycle + reachability runners
 docker/browser/          Chromium + Xvfb + noVNC image
 examples/api-session.ts
 src/**/*.test.ts         colocated unit tests (node:test + tsx)
-docs/api-design-browser-use-style.md
+docs/api-design-browserless-style.md
 docs/thoughts-before-starting.md
 ```
 
@@ -79,5 +79,5 @@ Client uses Patchright. Browser image runs headed Chromium on Xvfb. See README h
 
 ## Docs
 
-- [API design (Browser Use–shaped)](docs/api-design-browser-use-style.md)
+- [API design (Browserless Session–shaped)](docs/api-design-browserless-style.md)
 - [Thoughts before starting](docs/thoughts-before-starting.md)

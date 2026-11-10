@@ -3,7 +3,7 @@
 export const SERVICE = {
   name: "tgbrowser",
   version: "0.1.0",
-  description: "Self-hosted browser infrastructure (Browser Use–shaped).",
+  description: "Self-hosted browser infrastructure (Browserless Session–shaped).",
 } as const;
 
 export interface OperationResponseMeta {
@@ -32,7 +32,7 @@ export const OPERATIONS: Operation[] = [
   {
     operationId: "get_service",
     method: "GET",
-    path: "/api/v1",
+    path: "/",
     summary: "Service metadata and docs entrypoints.",
     description:
       "Returns service name, version, and links to the help catalog and OpenAPI document.",
@@ -42,7 +42,7 @@ export const OPERATIONS: Operation[] = [
         example: {
           name: "tgbrowser",
           version: "0.1.0",
-          docs: { catalog: "/api/v1/help", openapi: "/api/v1/openapi.json" },
+          docs: { catalog: "/help", openapi: "/openapi.json" },
         },
       },
     },
@@ -51,10 +51,10 @@ export const OPERATIONS: Operation[] = [
   {
     operationId: "list_help",
     method: "GET",
-    path: "/api/v1/help",
+    path: "/help",
     summary: "List all operations (catalog).",
     description:
-      "Progressive disclosure level 1: operation list with one-line summaries. Fetch detail via /api/v1/help/{operationId}.",
+      "Progressive disclosure level 1: operation list with one-line summaries. Fetch detail via /help/{operationId}.",
     responses: {
       "200": { description: "Catalog of operations" },
     },
@@ -63,7 +63,7 @@ export const OPERATIONS: Operation[] = [
   {
     operationId: "get_help_operation",
     method: "GET",
-    path: "/api/v1/help/{operationId}",
+    path: "/help/{operationId}",
     summary: "Detailed docs for one operation.",
     description:
       "Progressive disclosure level 2: full description, request schema, examples, and errors for a single operationId.",
@@ -76,7 +76,7 @@ export const OPERATIONS: Operation[] = [
   {
     operationId: "get_openapi",
     method: "GET",
-    path: "/api/v1/openapi.json",
+    path: "/openapi.json",
     summary: "Full OpenAPI document (escape hatch).",
     description:
       "Machine-complete schema for codegen. Prefer /help for human/agent discovery.",
@@ -86,10 +86,10 @@ export const OPERATIONS: Operation[] = [
   {
     operationId: "create_profile",
     method: "POST",
-    path: "/api/v1/profiles",
+    path: "/profiles",
     summary: "Create a durable browser profile directory.",
     description:
-      "Creates /data/profiles/{id} used as Chrome user-data-dir. Id must match ^[a-z0-9][a-z0-9_-]{1,63}$.",
+      "Creates /data/profiles/{id} used as Chrome user-data-dir. Id must match ^[a-z0-9][a-z0-9_-]{1,63}$. tgbrowser extension beyond core Browserless Session.",
     requestBody: {
       contentType: "application/json",
       schema: {
@@ -107,12 +107,12 @@ export const OPERATIONS: Operation[] = [
       "409": { description: "Profile already exists" },
       "422": { description: "Invalid id" },
     },
-    related: ["list_profiles", "create_browser_session"],
+    related: ["list_profiles", "create_session"],
   },
   {
     operationId: "list_profiles",
     method: "GET",
-    path: "/api/v1/profiles",
+    path: "/profiles",
     summary: "List saved profiles.",
     description: "Returns all profiles on disk.",
     responses: { "200": { description: "Profile list" } },
@@ -121,7 +121,7 @@ export const OPERATIONS: Operation[] = [
   {
     operationId: "get_profile",
     method: "GET",
-    path: "/api/v1/profiles/{profile_id}",
+    path: "/profiles/{profile_id}",
     summary: "Get one profile.",
     description: "Returns metadata for a single profile.",
     responses: {
@@ -133,9 +133,9 @@ export const OPERATIONS: Operation[] = [
   {
     operationId: "delete_profile",
     method: "DELETE",
-    path: "/api/v1/profiles/{profile_id}",
+    path: "/profiles/{profile_id}",
     summary: "Delete profile data from disk.",
-    description: "Destructive. Fails with 409 if a browser is still active for this profile.",
+    description: "Destructive. Fails with 409 if a session is still active for this profile.",
     responses: {
       "204": { description: "Deleted" },
       "404": { description: "Not found" },
@@ -144,79 +144,73 @@ export const OPERATIONS: Operation[] = [
     related: ["get_profile"],
   },
   {
-    operationId: "create_browser_session",
+    operationId: "create_session",
     method: "POST",
-    path: "/api/v1/browsers",
-    summary: "Start a browser; returns cdpUrl and liveUrl.",
+    path: "/session",
+    summary: "Create a browser session; returns connect and stop URLs.",
     description:
-      "Starts an isolated Chromium bound to an optional profileId. Connect with Patchright/Playwright connectOverCDP(cdpUrl). Closing CDP does not stop the browser; PATCH with action=stop.",
+      "Starts an isolated Chromium. Connect with Patchright/Playwright connectOverCDP(connect) or Puppeteer browserWSEndpoint. Closing CDP does not stop the session; DELETE the stop URL. Optional profileId is a tgbrowser extension.",
     requestBody: {
       contentType: "application/json",
       schema: {
         type: "object",
+        required: ["ttl"],
         properties: {
+          ttl: {
+            type: "integer",
+            minimum: 1000,
+            maximum: 14_400_000,
+            description: "Session lifetime in milliseconds.",
+          },
           profileId: { type: ["string", "null"], description: "Existing profile id." },
-          timeout: { type: "integer", minimum: 1, maximum: 240, default: 60 },
           browserScreenWidth: { type: ["integer", "null"] },
           browserScreenHeight: { type: ["integer", "null"] },
           engine: { type: "string", default: "stock", enum: ["stock"] },
         },
       },
-      example: { profileId: "device-a", timeout: 60 },
+      example: { ttl: 3_600_000, profileId: "device-a" },
     },
     responses: {
-      "201": { description: "Browser started" },
+      "201": { description: "Session started" },
       "404": { description: "profileId not found" },
-      "409": { description: "profile already has an active browser" },
+      "409": { description: "profile already has an active session" },
       "422": { description: "Validation error" },
     },
-    related: ["get_browser_session", "update_browser_session", "create_profile"],
+    related: ["get_session", "stop_session", "create_profile"],
   },
   {
-    operationId: "list_browser_sessions",
+    operationId: "list_sessions",
     method: "GET",
-    path: "/api/v1/browsers",
+    path: "/session",
     summary: "List browser sessions.",
     description: "Optional filterBy=active|stopped. Supports pageNumber and pageSize.",
-    responses: { "200": { description: "Paginated browser list" } },
-    related: ["get_browser_session"],
+    responses: { "200": { description: "Paginated session list" } },
+    related: ["get_session"],
   },
   {
-    operationId: "get_browser_session",
+    operationId: "get_session",
     method: "GET",
-    path: "/api/v1/browsers/{id}",
+    path: "/session/{id}",
     summary: "Get session status and connection URLs.",
-    description: "Includes cdpUrl and liveUrl while status is active.",
+    description: "Includes connect, stop, and live while status is active.",
     responses: {
-      "200": { description: "Browser session" },
+      "200": { description: "Session" },
       "404": { description: "Not found" },
     },
-    related: ["update_browser_session"],
+    related: ["stop_session"],
   },
   {
-    operationId: "update_browser_session",
-    method: "PATCH",
-    path: "/api/v1/browsers/{id}",
-    summary: "Stop (or later update) a browser session.",
+    operationId: "stop_session",
+    method: "DELETE",
+    path: "/session/{id}",
+    summary: "Stop a browser session.",
     description:
-      'v1 supports { "action": "stop" } only. CDP disconnect alone does not stop the browser.',
-    requestBody: {
-      contentType: "application/json",
-      schema: {
-        type: "object",
-        required: ["action"],
-        properties: {
-          action: { type: "string", enum: ["stop"] },
-        },
-      },
-      example: { action: "stop" },
-    },
+      "Terminates the browser container. CDP disconnect alone does not stop the session. Prefer the absolute stop URL from create when a token is required.",
     responses: {
-      "200": { description: "Updated session" },
+      "200": { description: "Stopped session" },
       "404": { description: "Not found" },
-      "422": { description: "Unsupported action" },
     },
-    related: ["get_browser_session"],
+    related: ["get_session"],
   },
 ];
 
@@ -226,13 +220,13 @@ export function getOperation(operationId: string): Operation | null {
 
 export function catalogPayload() {
   return {
-    description: "Operation catalog. Fetch detail via /api/v1/help/{operationId}.",
+    description: "Operation catalog. Fetch detail via /help/{operationId}.",
     operations: OPERATIONS.map((op) => ({
       operationId: op.operationId,
       method: op.method,
       path: op.path,
       summary: op.summary,
-      detail: `/api/v1/help/${op.operationId}`,
+      detail: `/help/${op.operationId}`,
     })),
   };
 }
@@ -252,6 +246,12 @@ export function detailPayload(operationId: string) {
   };
 }
 
+function tagForPath(path: string): string {
+  if (path.startsWith("/profiles")) return "Profiles";
+  if (path.startsWith("/session")) return "Sessions";
+  return "Meta";
+}
+
 export function openApiDocument() {
   const paths: Record<string, Record<string, unknown>> = {};
   for (const op of OPERATIONS) {
@@ -262,13 +262,7 @@ export function openApiDocument() {
       operationId: op.operationId,
       summary: op.summary,
       description: op.description,
-      tags: [
-        op.path.startsWith("/api/v1/profiles")
-          ? "Profiles"
-          : op.path.includes("/browsers")
-            ? "Browsers"
-            : "Meta",
-      ],
+      tags: [tagForPath(op.path)],
       ...(op.requestBody
         ? {
             requestBody: {
@@ -291,7 +285,7 @@ export function openApiDocument() {
     };
   }
 
-  paths["/api/v1/help/{operationId}"] = {
+  paths["/help/{operationId}"] = {
     get: {
       operationId: "get_help_operation",
       summary: "Detailed docs for one operation.",
