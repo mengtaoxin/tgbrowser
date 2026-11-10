@@ -13,5 +13,6 @@
 | `examples/` | Client recipes (CDP connect, session API, stealth) |
 | `bench/` | Lifecycle + reachability benches |
 | `docs/` | Agent and design docs |
+| `docs/change-code-steps.md` | Ordered workflow for code changes |
 
 Runtime data lives in `data/` (gitignored): profiles + `state.json`.
