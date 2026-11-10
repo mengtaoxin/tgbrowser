@@ -1,0 +1,17 @@
+# Local env — agent must not read secrets
+.env
+.env.*
+!.env.example
+
+# Certificates / keys
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Credential dumps and secret dirs
+credentials.json
+**/secrets/
+
+# Runtime browser profiles (cookies, logins, session state)
+data/

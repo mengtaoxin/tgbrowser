@@ -4,7 +4,7 @@
 
 This project exists to run a browser service in an isolated environment.
 
-No technology choices have been made yet. This document captures intent and constraints before implementation begins.
+Early product intent (pre-implementation). For the live stack and API contract, prefer [tech-stack.md](./tech-stack.md) and [api-design-browserless-style.md](./api-design-browserless-style.md).
 
 ## Goals
 

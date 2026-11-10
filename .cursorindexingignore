@@ -1,0 +1,9 @@
+# Lock files — keep out of index; still readable by path
+package-lock.json
+skills-lock.json
+
+# Generated / local outputs (not already covered as node_modules/build/logs/tmp in .gitignore)
+bench-results/
+coverage/
+dist/
+*.tsbuildinfo
