@@ -40,6 +40,8 @@ src/api/                 help registry, proxy
 src/services/            browser lifecycle
 src/runtime/docker.ts    docker run/stop
 src/store/               profiles + session state
+src/bench/               shared bench helpers (stats)
+bench/                   core lifecycle + reachability runners
 docker/browser/          Chromium + Xvfb + noVNC image
 examples/api-session.ts
 src/**/*.test.ts         colocated unit tests (node:test + tsx)
@@ -53,7 +55,23 @@ docs/thoughts-before-starting.md
 npm run api         # start HTTP API
 npm run typecheck   # tsc --noEmit
 npm test            # unit tests
+npm run bench       # core lifecycle + reachability (API must be up)
 ```
+
+## Core bench
+
+Against a running API (`npm run api`), measures the Steel-style session lifecycle and a small live-site smoke set. Not a full public leaderboard run.
+
+```bash
+npm run bench                 # lifecycle + reachability
+npm run bench:lifecycle       # create → CDP → goto → stop (timings)
+npm run bench:reachability    # example / wikipedia / baidu / sannysoft signals
+
+# optional knobs
+BENCH_RUNS=5 BENCH_WARMUP=1 BENCH_URL=https://example.com/ npm run bench:lifecycle
+```
+
+JSON dumps land in `bench-results/` (gitignored).
 
 ## Stealth
 

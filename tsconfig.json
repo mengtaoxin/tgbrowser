@@ -18,5 +18,5 @@
     "rootDir": ".",
     "baseUrl": "."
   },
-  "include": ["src/**/*.ts", "examples/**/*.ts"]
+  "include": ["src/**/*.ts", "examples/**/*.ts", "bench/**/*.ts"]
 }

@@ -20,3 +20,6 @@ credentials.json
 # Runtime browser data (cookies, logins, history, session state)
 data/*
 !data/.gitkeep
+
+# Local benchmark outputs
+bench-results/

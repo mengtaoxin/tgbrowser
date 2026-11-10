@@ -7,6 +7,9 @@
     "connect": "tsx examples/connect.ts",
     "stealth-check": "tsx examples/stealth-check.ts",
     "api-session": "tsx examples/api-session.ts",
+    "bench": "tsx bench/run.ts",
+    "bench:lifecycle": "tsx bench/run.ts lifecycle",
+    "bench:reachability": "tsx bench/run.ts reachability",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test 'src/**/*.test.ts'"
   },
